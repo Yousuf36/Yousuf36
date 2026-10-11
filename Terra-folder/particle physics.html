@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravity Particle Simulation</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+</head>
+
+<body>
+
+    <script>
+        const particles = [];
+
+        const G = 0.1;
+        const SCALE = 0.0001;
+
+        class Particle {
+            constructor(x, y, mass) {
+                this.position = createVector(x, y);
+                this.acceleration = createVector(0, 0);
+                this.velocity = createVector(0, 0);
+                this.mass = mass;
+
+                this.radius = Math.sqrt(this.mass / PI) * SCALE;
+
+                this.color = color(
+                    random(0, 255),
+                    random(0, 255),
+                    random(0, 255)
+                );
+            }
+
+            draw() {
+                noStroke();
+                fill(this.color);
+
+                ellipse(
+                    this.position.x,
+                    this.position.y,
+                    this.radius * 2
+                );
+            }
+
+            applyForce(force) {
+                let acceleration = p5.Vector.div(force, this.mass);
+                this.acceleration.add(acceleration);
+            }
+
+            physics(particle) {
+                if (this === particle) return;
+
+                let massProduct = this.mass * particle.mass;
+                let radiusSum = this.radius + particle.radius;
+
+                let distance = this.position.dist(particle.position);
+
+                if (distance <= radiusSum || distance === 0) return;
+
+                let force = p5.Vector.sub(
+                    particle.position,
+                    this.position
+                );
+
+                force.setMag(
+                    G * massProduct / (distance * distance)
+                );
+
+                this.applyForce(force);
+            }
+
+            update() {
+                let dt = deltaTime / 1000;
+
+                let deltaVelocity = p5.Vector.mult(
+                    this.acceleration,
+                    dt
+                );
+
+                this.velocity.add(deltaVelocity);
+
+                let deltaPosition = p5.Vector.mult(
+                    this.velocity,
+                    dt
+                );
+
+                this.position.add(deltaPosition);
+                this.acceleration.mult(0);
+            }
+        }
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+
+            for (let i = 0; i < 10; i++) {
+                let x = random(0, width);
+                let y = random(0, height);
+                let mass = random(2e8, 1e9);
+
+                particles.push(new Particle(x, y, mass));
+            }
+        }
+
+        function draw() {
+            background(51);
+
+            for (const particleA of particles) {
+                for (const particleB of particles) {
+                    if (particleA !== particleB) {
+                        particleA.physics(particleB);
+                    }
+                }
+            }
+
+            for (const particle of particles) {
+                particle.update();
+                particle.draw();
+            }
+        }
+    </script>
+
+</body>
+
+</html>
