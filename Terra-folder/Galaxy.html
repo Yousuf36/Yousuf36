@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Galaxy Audio Visualizer</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #02010a;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #interface {
+            position: fixed;
+            top: 25px;
+            left: 25px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-size: 24px;
+            letter-spacing: 4px;
+            font-weight: 300;
+            text-shadow: 0 0 15px #8b5cf6;
+        }
+
+        p {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #b7b4d9;
+            letter-spacing: 1px;
+        }
+
+        #startButton {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            border: 1px solid #a78bfa;
+            border-radius: 30px;
+            background: rgba(35, 20, 70, 0.85);
+            color: white;
+            padding: 15px 28px;
+            cursor: pointer;
+            letter-spacing: 2px;
+            font-size: 13px;
+        }
+
+        #startButton:hover {
+            background: #5b21b6;
+            box-shadow: 0 0 25px #8b5cf6;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="interface">
+        <h1>GALAXY</h1>
+        <p>AN AUDIO-REACTIVE UNIVERSE</p>
+        <p id="status">Click START and allow microphone access</p>
+    </div>
+
+    <button id="startButton">START GALAXY</button>
+
+    <script>
+        let fft;
+        let mic;
+        let particles = [];
+        let stars = [];
+
+        let started = false;
+        let soundLevel = 0;
+        let bass = 0;
+        let treble = 0;
+        let pulse = 0;
+
+        const PARTICLE_COUNT = 240;
+        const STAR_COUNT = 180;
+
+        class Particle {
+            constructor() {
+                this.angle = random(TWO_PI);
+                this.radius = random(25, min(width, height) * 0.43);
+
+                this.orbitSpeed = random(0.001, 0.009);
+                this.size = random(1.5, 4.5);
+                this.phase = random(TWO_PI);
+
+                this.color = color(
+                    random(100, 190),
+                    random(80, 170),
+                    random(200, 255)
+                );
+            }
+
+            update() {
+                // Each particle orbits the galaxy center.
+                this.angle += this.orbitSpeed;
+
+                // Sound makes the galaxy expand.
+                let expansion = soundLevel * 180 + bass * 100;
+
+                this.currentRadius =
+                    this.radius + expansion * sin(this.phase + pulse);
+
+                this.currentRadius = max(5, this.currentRadius);
+            }
+
+            draw() {
+                let x = width / 2 +
+                    cos(this.angle) * this.currentRadius;
+
+                // Compress the vertical axis to create a disk.
+                let y = height / 2 +
+                    sin(this.angle) * this.currentRadius * 0.58;
+
+                let diameter = this.size + soundLevel * 12;
+
+                noStroke();
+
+                // Glow layer
+                fill(
+                    red(this.color),
+                    green(this.color),
+                    blue(this.color),
+                    35
+                );
+
+                circle(x, y, diameter * 3);
+
+                // Bright particle
+                fill(
+                    red(this.color),
+                    green(this.color),
+                    blue(this.color),
+                    190
+                );
+
+                circle(x, y, diameter);
+            }
+        }
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+
+            colorMode(RGB, 255);
+            background(2, 1, 10);
+            noStroke();
+
+            // Create galaxy particles.
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                particles.push(new Particle());
+            }
+
+            // Create distant background stars.
+            for (let i = 0; i < STAR_COUNT; i++) {
+                stars.push({
+                    x: random(width),
+                    y: random(height),
+                    size: random(0.5, 2),
+                    alpha: random(70, 220),
+                    phase: random(TWO_PI)
+                });
+            }
+
+            // Prepare the microphone, but start it after a click.
+            mic = new p5.AudioIn();
+
+            fft = new p5.FFT(0.8, 1024);
+
+            document
+                .getElementById("startButton")
+                .addEventListener("click", startGalaxy);
+        }
+
+        async function startGalaxy() {
+            const button = document.getElementById("startButton");
+            const status = document.getElementById("status");
+
+            button.disabled = true;
+            button.textContent = "CONNECTING...";
+
+            try {
+                await userStartAudio();
+
+                await new Promise((resolve, reject) => {
+                    mic.start(resolve, reject);
+                });
+
+                fft.setInput(mic);
+
+                started = true;
+                button.style.display = "none";
+                status.textContent = "MICROPHONE ACTIVE • MAKE SOME SOUND";
+
+            } catch (error) {
+                button.disabled = false;
+                button.textContent = "TRY AGAIN";
+                status.textContent =
+                    "Microphone unavailable. Check browser permissions.";
+                console.error(error);
+            }
+        }
+
+        function draw() {
+            background(2, 1, 10, 75);
+
+            drawBackgroundStars();
+
+            // Analyze sound only after microphone activation.
+            if (started) {
+                fft.analyze();
+
+                soundLevel = constrain(mic.getLevel() * 5, 0, 1);
+
+                bass = fft.getEnergy("bass") / 255;
+                treble = fft.getEnergy("treble") / 255;
+
+                pulse += 0.025 + bass * 0.12;
+            } else {
+                // Gentle idle animation before starting the mic.
+                soundLevel = 0.03;
+                bass = 0;
+                treble = 0;
+                pulse += 0.02;
+            }
+
+            drawGalaxyCore();
+            drawGalaxyArms();
+
+            for (let particle of particles) {
+                particle.update();
+                particle.draw();
+            }
+
+            drawSoundRing();
+            drawHUD();
+        }
+
+        function drawBackgroundStars() {
+            noStroke();
+
+            for (let star of stars) {
+                let twinkle =
+                    sin(frameCount * 0.025 + star.phase) * 45;
+
+                fill(
+                    190,
+                    195,
+                    255,
+                    constrain(star.alpha + twinkle, 30, 255)
+                );
+
+                circle(star.x, star.y, star.size);
+            }
+        }
+
+        function drawGalaxyCore() {
+            let cx = width / 2;
+            let cy = height / 2;
+
+            let coreSize = 35 + bass * 100 +
+                soundLevel * 60;
+
+            // Broad purple glow.
+            noStroke();
+
+            for (let i = 8; i >= 1; i--) {
+                fill(
+                    100 + bass * 60,
+                    40,
+                    220,
+                    8
+                );
+
+                circle(cx, cy, coreSize + i * 22);
+            }
+
+            // Bright core.
+            fill(180, 150, 255, 100);
+            circle(cx, cy, coreSize);
+
+            fill(235, 220, 255, 220);
+            circle(cx, cy, coreSize * 0.42);
+
+            fill(255, 255, 255);
+            circle(cx, cy, max(3, coreSize * 0.12));
+        }
+
+        function drawGalaxyArms() {
+            let cx = width / 2;
+            let cy = height / 2;
+
+            noFill();
+            strokeWeight(1);
+
+            for (let arm = 0; arm < 3; arm++) {
+                stroke(115, 80, 240, 30 + bass * 70);
+
+                beginShape();
+
+                for (let i = 0; i < 150; i++) {
+                    let t = i / 149;
+                    let angle =
+                        t * TWO_PI * 1.7 +
+                        arm * TWO_PI / 3 +
+                        frameCount * 0.003;
+
+                    let radius =
+                        15 + t * min(width, height) * 0.38;
+
+                    radius += bass * 30 * t;
+
+                    let x = cx + cos(angle) * radius;
+                    let y = cy + sin(angle) * radius * 0.58;
+
+                    vertex(x, y);
+                }
+
+                endShape();
+            }
+
+            noStroke();
+        }
+
+        function drawSoundRing() {
+            let radius = min(width, height) * 0.16 +
+                bass * 110 + soundLevel * 70;
+
+            noFill();
+            strokeWeight(1.5);
+
+            stroke(100, 170, 255, 45 + bass * 120);
+
+            circle(width / 2, height / 2, radius * 2);
+
+            stroke(190, 100, 255, 30 + treble * 100);
+
+            circle(
+                width / 2,
+                height / 2,
+                radius * 2 + treble * 45
+            );
+
+            noStroke();
+        }
+
+        function drawHUD() {
+            if (!started) return;
+
+            fill(200, 200, 255, 190);
+            textSize(11);
+            textAlign(LEFT, TOP);
+
+            text(
+                "BASS  " + nf(bass * 100, 2, 0) + "%",
+                25,
+                height - 55
+            );
+
+            text(
+                "TREBLE  " + nf(treble * 100, 2, 0) + "%",
+                25,
+                height - 35
+            );
+
+            // Sound-reactive visual meter.
+            noStroke();
+            fill(65, 45, 100, 180);
+            rect(25, height - 15, 150, 4, 2);
+
+            fill(150, 110, 255);
+            rect(
+                25,
+                height - 15,
+                150 * constrain(soundLevel, 0, 1),
+                4,
+                2
+            );
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+
+            // Keep background stars inside the new canvas.
+            for (let star of stars) {
+                star.x = random(width);
+                star.y = random(height);
+            }
+
+            // Keep the galaxy within the visible area.
+            for (let particle of particles) {
+                particle.radius =
+                    random(25, min(width, height) * 0.43);
+            }
+        }
+    </script>
+</body>
+
+</html>
